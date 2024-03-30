@@ -114,6 +114,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 # Keep track of max radii in image-space for pruning
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+                if opt._2dgs:
+                    gaussians.scale_replace_min_with_zero()
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
@@ -205,9 +207,11 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
+    parser.add_argument("--twodgs", action="store_true", default=False, help="Use 2D Gaussians")
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
-    
+    if args.twodgs:
+        args._2dgs = True
     print("Optimizing " + args.model_path)
 
     # Initialize system state (RNG)

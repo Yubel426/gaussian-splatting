@@ -408,7 +408,7 @@ class GaussianModel:
 
     def scale_replace_min_with_zero(self):
         min_values, min_indices = torch.min(self._scaling, dim=1)
-        self.scaling[torch.arange(self._scaling.shape[0]), min_indices] = -0.001
+        self._scaling[torch.arange(self._scaling.shape[0]), min_indices] = -0.001
 
     def get_min_rotation(self):
         #todo: implement
