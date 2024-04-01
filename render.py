@@ -10,6 +10,7 @@
 #
 
 import torch
+import numpy as np
 from scene import Scene
 import os
 from tqdm import tqdm
@@ -17,6 +18,7 @@ from os import makedirs
 from gaussian_renderer import render
 import torchvision
 from utils.general_utils import safe_state
+from utils.image_utils import viridis_cmap
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import GaussianModel
@@ -25,21 +27,39 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
     depth_path = os.path.join(model_path, name, "ours_{}".format(iteration), "depth")
-
+    normals_path = os.path.join(model_path, name, "ours_{}".format(iteration), "normals")
+    
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
     makedirs(depth_path, exist_ok=True)
+    makedirs(normals_path, exist_ok=True)
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
-        results = render(view, gaussians, pipeline, background)
+        results = render(view, gaussians, pipeline, background,
+                        inference=True,
+                        pad_normal=True,
+                        derive_normal=True,
+                    )
         rendering = results["render"]
-        depth = results["depth"]
-        depth = depth / (depth.max() + 1e-5)
+        # depth = results["depth"]
+        # depth = depth / (depth.max() + 1e-5)
+        depth_map = results["depth_map"]
+        depth_img = depth_map / (depth_map.max() + 1e-5)
+        # depth_img = (depth_img * 255).astype(np.uint8)
+        normal_map_from_depth = results["normal_map_from_depth"]
+        normal_map = results["normal_map"]
 
         gt = view.original_image[0:3, :, :]
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(depth, os.path.join(depth_path, '{0:05d}'.format(idx) + ".png"))
+        torchvision.utils.save_image(depth_img, os.path.join(depth_path, '{0:05d}'.format(idx) + ".png"))
+        torchvision.utils.save_image(
+            (normal_map + 1) / 2, os.path.join(normals_path, f"{idx:05d}_normal.png")
+        )
+        torchvision.utils.save_image(
+            (normal_map_from_depth + 1) / 2,
+            os.path.join(normals_path, f"{idx:05d}_from_depth.png"),
+        )
 
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool):
     with torch.no_grad():
