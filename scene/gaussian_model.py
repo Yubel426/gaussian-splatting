@@ -19,7 +19,7 @@ from plyfile import PlyData, PlyElement
 from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
-from utils.general_utils import strip_symmetric, build_scaling_rotation
+from utils.general_utils import strip_symmetric, build_scaling_rotation, get_minimum_axis, flip_align_view
 
 class GaussianModel:
 
@@ -111,11 +111,22 @@ class GaussianModel:
         return torch.cat((features_dc, features_rest), dim=1)
     
     @property
+    def get_minimum_axis(self):
+        return get_minimum_axis(self.get_scaling, self.get_rotation)
+
+    @property
     def get_opacity(self):
         return self.opacity_activation(self._opacity)
     
     def get_covariance(self, scaling_modifier = 1):
         return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
+
+    def get_normal(self, dir_pp_normalized=None):
+        normal_axis = self.get_minimum_axis
+        normal_axis, positive = flip_align_view(normal_axis, dir_pp_normalized)
+        normal = normal_axis/normal_axis.norm(dim=1, keepdim=True) # (N, 3)
+
+        return normal
 
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
