@@ -86,13 +86,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         render_pkg = render(viewpoint_cam, gaussians, pipe, bg,derive_normal=True)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         normal_map_from_depth, normal_from_gs = render_pkg["normal_map_from_depth"], render_pkg["normal_from_gs"]
-
+        alpha = render_pkg["alpha"]
         # Loss
         losses_extra={}
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        losses_extra["normal_cons"] = opt.lambda_NC * normal_consistency_loss(normal_map_from_depth, normal_from_gs)
+        losses_extra["normal_cons"] = opt.lambda_NC * normal_consistency_loss(normal_map_from_depth, normal_from_gs, alpha)
         for k in losses_extra.keys():
             loss += losses_extra[k]
         loss.backward()

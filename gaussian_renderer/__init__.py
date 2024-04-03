@@ -174,6 +174,38 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         )[0]
         out_extras["normal"] = image        
         out_extras["normal_from_gs"] = (out_extras["normal"] - 0.5) * 2 # (0, 1) -> (-1, 1)
+        raster_settings_alpha = GaussianRasterizationSettings(
+            image_height=int(viewpoint_camera.image_height),
+            image_width=int(viewpoint_camera.image_width),
+            tanfovx=tanfovx,
+            tanfovy=tanfovy,
+            bg=torch.tensor([0,0,0], dtype=torch.float32, device="cuda"),
+            scale_modifier=scaling_modifier,
+            viewmatrix=viewpoint_camera.world_view_transform,
+            projmatrix=viewpoint_camera.full_proj_transform,
+            sh_degree=pc.active_sh_degree,
+            campos=viewpoint_camera.camera_center,
+            prefiltered=False,
+            debug=pipe.debug,
+            inference=inference,
+            argmax_depth=False
+
+        )
+        rasterizer_alpha = GaussianRasterizer(raster_settings=raster_settings_alpha)
+        out_extras["alpha"] = torch.ones_like(means3D) 
+        out_extras["alpha"] =  rasterizer_alpha(
+            means3D=means3D,
+            means2D=means2D,
+            opacities=opacity,
+            normal=normal,
+            colors_precomp=out_extras["alpha"],
+            albedo=albedo,
+            roughness=roughness,
+            metallic=metallic,
+            scales=scales,
+            rotations=rotations,
+            cov3D_precomp=cov3D_precomp,
+            derive_normal=False)[0]
 
     out = { "render": rendered_image,
             "viewspace_points": screenspace_points,

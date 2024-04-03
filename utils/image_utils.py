@@ -10,6 +10,7 @@
 #
 
 import torch
+import cv2 
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -29,3 +30,10 @@ def viridis_cmap(gray: np.ndarray) -> np.ndarray:
     """
     colored = plt.cm.viridis(plt.Normalize()(gray.squeeze()))[..., :-1]
     return colored.astype(np.float32)
+
+def erode(img_in, erode_size=4):
+    img_out = np.copy(img_in)
+    kernel = np.ones((erode_size, erode_size), np.uint8)
+    img_out = cv2.erode(img_out, kernel, iterations=1)
+
+    return img_out
