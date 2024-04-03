@@ -62,3 +62,25 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
     else:
         return ssim_map.mean(1).mean(1).mean(1)
 
+def normal_consistency_loss(normal_depth, normal_gs, alpha=None):
+    """Computes the normal_consistency loss defined in eq14."""
+    # normal: (3, H, W), normal_ref: (3, H, W), alpha: (3, H, W)
+    if alpha is not None:
+        device = alpha.device
+        weight = alpha.detach().cpu().numpy()[0]
+        weight = (weight*255).astype(np.uint8)
+
+        weight = erode(weight, erode_size=4)
+
+        weight = torch.from_numpy(weight.astype(np.float32)/255.)
+        weight = weight[None,...].repeat(3,1,1)
+        weight = weight.to(device) 
+    else:
+        weight = torch.ones_like(normal_depth)
+
+    w = weight.permute(1,2,0).reshape(-1,3)[...,0].detach()
+    n_depth = normal_depth.permute(1,2,0).reshape(-1,3).detach()
+    n_gs = normal_gs.permute(1,2,0).reshape(-1,3)
+    loss = (w * (1.0 - torch.sum(n_gs * n_depth, axis=-1))).mean()
+
+    return loss
