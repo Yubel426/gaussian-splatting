@@ -26,6 +26,8 @@ from utils.general_utils import (
     get_expon_lr_func,
     inverse_sigmoid,
     strip_symmetric,
+    get_minimum_axis, 
+    flip_align_view
 )
 from utils.graphics_utils import BasicPointCloud
 from utils.sh_utils import RGB2SH
@@ -179,6 +181,10 @@ class GaussianModel:
         return torch.cat((features_dc, features_rest), dim=1)
 
     @property
+    def get_minimum_axis(self):
+        return get_minimum_axis(self.get_scaling, self.get_rotation)
+
+    @property
     def get_opacity(self) -> torch.Tensor:
         return self.opacity_activation(self._opacity)
 
@@ -200,6 +206,13 @@ class GaussianModel:
 
     def get_covariance(self, scaling_modifier: float = 1.0) -> torch.Tensor:
         return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
+
+    def get_normal_from_gs(self, dir_pp_normalized=None):
+        normal_axis = self.get_minimum_axis
+        normal_axis, positive = flip_align_view(normal_axis, dir_pp_normalized)
+        normal = normal_axis/normal_axis.norm(dim=1, keepdim=True) # (N, 3)
+
+        return normal
 
     def oneupSHdegree(self) -> None:
         if self.active_sh_degree < self.max_sh_degree:

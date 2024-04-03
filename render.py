@@ -47,15 +47,15 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         depth_img = depth_map / (depth_map.max() + 1e-5)
         # depth_img = (depth_img * 255).astype(np.uint8)
         normal_map_from_depth = results["normal_map_from_depth"]
-        normal_map = results["normal_map"]
-
+        # normal_map = results["normal_map"]
+        normal_from_gs = results["normal_from_gs"]
+        normal_from_gs = (normal_from_gs + 1) / 2
         gt = view.original_image[0:3, :, :]
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(depth_img, os.path.join(depth_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(
-            (normal_map + 1) / 2, os.path.join(normals_path, f"{idx:05d}_normal.png")
-        )
+        torchvision.utils.save_image(normal_from_gs, os.path.join(normals_path, '{0:05d}'.format(idx) + "_from_gs.png"))
+
         torchvision.utils.save_image(
             (normal_map_from_depth + 1) / 2,
             os.path.join(normals_path, f"{idx:05d}_from_depth.png"),

@@ -13,6 +13,7 @@ import torch
 import math
 import torch.nn.functional as F
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+from utils.general_utils import flip_align_view
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
 
@@ -148,21 +149,47 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         F.normalize(normal_map, dim=0, p=2),
         normal_map,
     )
+    out_extras = {}
+    if derive_normal:
+        dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_opacity.shape[0], 1))
+        dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True) # (N, 3)
+        # if debug: 
+        #     normal_axis_normed = 0.5*normal_axis + 0.5  # range (-1, 1) -> (0, 1)
+        #     render_extras.update({"normal_axis": normal_axis_normed})        
+        normal_from_gs = pc.get_normal_from_gs(dir_pp_normalized) # (-1, 1) -> (0, 1)
+        normal_from_gs = (normal_from_gs + 1) / 2
+        image = rasterizer(
+            means3D=means3D,
+            means2D=means2D,
+            opacities=opacity,
+            normal=normal,
+            colors_precomp=normal_from_gs,
+            albedo=albedo,
+            roughness=roughness,
+            metallic=metallic,
+            scales=scales,
+            rotations=rotations,
+            cov3D_precomp=cov3D_precomp,
+            derive_normal=False,
+        )[0]
+        out_extras["normal"] = image        
+        out_extras["normal_from_gs"] = (out_extras["normal"] - 0.5) * 2 # (0, 1) -> (-1, 1)
 
+    out = { "render": rendered_image,
+            "viewspace_points": screenspace_points,
+            "visibility_filter": radii > 0,
+            "radii": radii,
+            "opacity_map": opacity_map,
+            "depth_map": depth_map,
+            "normal_map_from_depth": normal_map_from_depth,
+            "normal_from_depth_mask": normal_from_depth_mask,
+            "normal_map": normal_map,
+            "normal_mask": normal_mask,
+            "albedo_map": albedo_map,
+            "roughness_map": roughness_map,
+            "metallic_map": metallic_map,
+    }
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
-    return {
-        "render": rendered_image,
-        "viewspace_points": screenspace_points,
-        "visibility_filter": radii > 0,
-        "radii": radii,
-        "opacity_map": opacity_map,
-        "depth_map": depth_map,
-        "normal_map_from_depth": normal_map_from_depth,
-        "normal_from_depth_mask": normal_from_depth_mask,
-        "normal_map": normal_map,
-        "normal_mask": normal_mask,
-        "albedo_map": albedo_map,
-        "roughness_map": roughness_map,
-        "metallic_map": metallic_map,
-    }
+    out.update(out_extras)
+    return out
