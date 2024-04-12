@@ -23,7 +23,7 @@ from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 try:
-    from torch.utils.tensorboard import SummaryWriter
+    from tensorboardX import SummaryWriter
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
@@ -67,6 +67,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         iter_start.record()
 
         gaussians.update_learning_rate(iteration)
+
+        print("\n[ITER {}] Training".format(iteration))
+        print("There are {} gaussians".format(gaussians.get_xyz.shape[0]))
+        # save number of gaussians
+        if iteration % 30 == 0:
+            if tb_writer:
+                tb_writer.add_scalar('scene/num_gaussians', gaussians.get_xyz.shape[0], iteration) 
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
