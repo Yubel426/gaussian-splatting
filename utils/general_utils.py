@@ -77,19 +77,26 @@ def strip_symmetric(sym):
 
 # TODO: modify this to work with 2dgs
 def build_rotation(r):
+    norm = torch.sqrt(r[:,0]*r[:,0] + r[:,1]*r[:,1] + r[:,2]*r[:,2] + r[:,3]*r[:,3])
 
+    q = r / norm[:, None]
 
-    norm_tu = torch.sqrt(r[:,0]*r[:,0] + r[:,1]*r[:,1] + r[:,2]*r[:,2])
-    norm_tv = torch.sqrt(r[:,3]*r[:,3] + r[:,4]*r[:,4] + r[:,5]*r[:,5])
-    tu = r[:,:3] / norm_tu[:, None]
-    tv = r[:,3:] / norm_tv[:, None]
-    tw = torch.cross(tu, tv, dim=1)
-    tw = tw / torch.sqrt(tw[:,0]*tw[:,0] + tw[:,1]*tw[:,1] + tw[:,2]*tw[:,2])[:, None]
-    R = torch.zeros((r.size(0), 3, 3), device='cuda')
+    R = torch.zeros((q.size(0), 3, 3), device='cuda')
 
-    R[:, 0, :3] = tu
-    R[:, 1, :3] = tv
-    R[:, 2, :3] = tw
+    r = q[:, 0]
+    x = q[:, 1]
+    y = q[:, 2]
+    z = q[:, 3]
+
+    R[:, 0, 0] = 1 - 2 * (y*y + z*z)
+    R[:, 0, 1] = 2 * (x*y - r*z)
+    R[:, 0, 2] = 2 * (x*z + r*y)
+    R[:, 1, 0] = 2 * (x*y + r*z)
+    R[:, 1, 1] = 1 - 2 * (x*x + z*z)
+    R[:, 1, 2] = 2 * (y*z - r*x)
+    R[:, 2, 0] = 2 * (x*z - r*y)
+    R[:, 2, 1] = 2 * (y*z + r*x)
+    R[:, 2, 2] = 1 - 2 * (x*x + y*y)
     return R
 
 def build_scaling_rotation(s, r):
