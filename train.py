@@ -17,6 +17,7 @@ from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
 from utils.general_utils import safe_state
+from utils.graphics_utils import normal_from_depth_image
 import uuid
 from tqdm import tqdm
 from utils.image_utils import psnr
@@ -91,7 +92,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
         render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        image, median_depth, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["median_depth"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        normal_from_depth = normal_from_depth_image(median_depth[0], viewpoint_cam.intrinsics.cuda(), 
+                                                            viewpoint_cam.extrinsics.cuda())[0].permute(2, 0, 1)
 
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
