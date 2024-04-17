@@ -11,7 +11,7 @@
 
 import torch
 import numpy as np
-from utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation
+from utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation, flip_align_view
 from torch import nn
 import os
 from utils.system_utils import mkdir_p
@@ -117,6 +117,14 @@ class GaussianModel:
     def get_covariance(self, scaling_modifier = 1):
         return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
 
+    def get_normal_from_gs(self, dir_pp_normalized=None):
+        R = build_rotation(self.get_rotation)
+        normal = R[..., 2]
+        # normal_axis, positive = flip_align_view(normal_axis, dir_pp_normalized)
+        # normal = normal / normal.norm(dim=1, keepdim=True) # (N, 3)
+
+        return normal
+    
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1

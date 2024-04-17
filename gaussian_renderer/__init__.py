@@ -91,11 +91,48 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         scales = scales,
         rotations = rotations,
         cov3D_precomp = cov3D_precomp)
+    
+    # render noraml
+    # TODO: add normal rendering to the rasterizer
+    raster_settings = GaussianRasterizationSettings(
+        image_height=int(viewpoint_camera.image_height),
+        image_width=int(viewpoint_camera.image_width),
+        tanfovx=tanfovx,
+        tanfovy=tanfovy,
+        bg=torch.tensor([0,0,0], dtype=torch.float32, device="cuda"),
+        scale_modifier=scaling_modifier,
+        viewmatrix=viewpoint_camera.world_view_transform,
+        projmatrix=viewpoint_camera.full_proj_transform,
+        sh_degree=pc.active_sh_degree,
+        campos=viewpoint_camera.camera_center,
+        prefiltered=False,
+        debug=pipe.debug
+    )
+    normal = pc.get_normal_from_gs()
+    scales = pc.get_scaling
+    # convert normal direction to the camera; calculate the normal in the camera coordinate
+    view_dir = means3D - viewpoint_camera.camera_center
+    normal   = normal * ((((view_dir * normal).sum(dim=-1) < 0) * 1 - 0.5) * 2)[...,None]
+
+    R_w2c = torch.tensor(viewpoint_camera.R.T).cuda().to(torch.float32)
+    normal = (R_w2c @ normal.transpose(0, 1)).transpose(0, 1)
+    render_normal, _, _ = rasterizer(
+        means3D = means3D,
+        means2D = means2D,
+        shs = None,
+        colors_precomp = normal,
+        opacities = opacity,
+        scales = scales,
+        rotations = rotations,
+        cov3D_precomp = cov3D_precomp)
+    normal_from_gs = torch.nn.functional.normalize(render_normal, dim=0)                                                                                                                                                   
+
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
     return {"render": rendered_image,
             "median_depth": median_depth,
+            "normal_from_gs": normal_from_gs,
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,
             "radii": radii,}
