@@ -82,7 +82,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         colors_precomp = override_color
 
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    rendered_image, median_depth, radii= rasterizer(
+    rendered_image, median_depth, loss_dd, radii= rasterizer(
         means3D = means3D,
         means2D = means2D,
         shs = shs,
@@ -116,7 +116,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
 
     R_w2c = torch.tensor(viewpoint_camera.R.T).cuda().to(torch.float32)
     normal = (R_w2c @ normal.transpose(0, 1)).transpose(0, 1)
-    render_normal, _, _ = rasterizer(
+    render_normal, _, _, _ = rasterizer(
         means3D = means3D,
         means2D = means2D,
         shs = None,
@@ -135,4 +135,5 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             "normal_from_gs": normal_from_gs,
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,
+            "loss_dd": loss_dd,
             "radii": radii,}

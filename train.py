@@ -102,6 +102,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         losses_extra["normal_cons"] = cos_loss(normal_from_gs, normal_from_depth)
+        losses_extra["depth_dist"] = render_pkg["loss_dd"][0].mean()
+        print("loss_dd",losses_extra["depth_dist"])
         for k in losses_extra.keys():
             loss += losses_extra[k]
         loss.backward()
