@@ -12,7 +12,7 @@
 import os
 import torch
 from random import randint
-from utils.loss_utils import l1_loss, ssim
+from utils.loss_utils import l1_loss, ssim, cos_loss
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
@@ -95,11 +95,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         image, median_depth, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["median_depth"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         normal_from_depth = normal_from_depth_image(median_depth[0], viewpoint_cam.intrinsics.cuda(), 
                                                             viewpoint_cam.extrinsics.cuda())[0].permute(2, 0, 1)
-
+        normal_from_gs = render_pkg["normal_from_gs"]
         # Loss
+        losses_extra={}
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        losses_extra["normal_cons"] = cos_loss(normal_from_gs, normal_from_depth)
+        for k in losses_extra.keys():
+            loss += losses_extra[k]
         loss.backward()
 
         iter_end.record()
@@ -114,7 +118,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 progress_bar.close()
 
             # Log and save
-            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
+            training_report(tb_writer, iteration, Ll1, loss, losses_extra, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
@@ -164,12 +168,13 @@ def prepare_output_and_logger(args):
         print("Tensorboard not available: not logging progress")
     return tb_writer
 
-def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs):
+def training_report(tb_writer, iteration, Ll1, loss, losses_extra, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs):
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/l1_loss', Ll1.item(), iteration)
         tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)
         tb_writer.add_scalar('iter_time', elapsed, iteration)
-
+        for k in losses_extra.keys():
+                tb_writer.add_scalar(f'train_loss_patches/{k}_loss', losses_extra[k].item(), iteration)
     # Report test and samples of training set
     if iteration in testing_iterations:
         torch.cuda.empty_cache()
