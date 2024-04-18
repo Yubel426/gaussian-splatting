@@ -414,10 +414,3 @@ class GaussianModel:
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
 
-    def scale_replace_min_with_zero(self):
-        min_values, min_indices = torch.min(self._scaling, dim=1)
-        self._scaling[torch.arange(self._scaling.shape[0]), min_indices] = 0.001
-
-    def get_min_rotation(self):
-        #todo: implement
-        pass

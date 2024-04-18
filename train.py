@@ -133,12 +133,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.05, scene.cameras_extent, size_threshold)
                 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
-            if iteration % 1000 == 0 and iteration > 15000 and opt.twodgs:
-                gaussians.scale_replace_min_with_zero()
+            
+            if iteration % 3000 == 0:
+                gaussians.remove_small_gaussians(0.05)
             # Optimizer step
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
