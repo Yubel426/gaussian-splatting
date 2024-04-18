@@ -101,8 +101,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        losses_extra["normal_cons"] = cos_loss(normal_from_gs, normal_from_depth)
-        losses_extra["depth_dist"] = render_pkg["loss_dd"][0].mean()
+        losses_extra["normal_cons"] = 0.05 * cos_loss(normal_from_gs, normal_from_depth)
+        losses_extra["depth_dist"] = 1000 * render_pkg["loss_dd"][0].mean()
         print("loss_dd",losses_extra["depth_dist"])
         for k in losses_extra.keys():
             loss += losses_extra[k]
