@@ -16,11 +16,13 @@ from tqdm import tqdm
 from os import makedirs
 from gaussian_renderer import render
 import torchvision
+import vdbfusion
+import trimesh
 from utils.general_utils import safe_state
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import GaussianModel
-from utils.graphics_utils import normal_from_depth_image
+from utils.graphics_utils import normal_from_depth_image, depth2point
 
 
 def render_set(model_path, name, iteration, views, gaussians, pipeline, background):
@@ -36,21 +38,40 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     makedirs(normal_from_depth_image_path, exist_ok=True)
     makedirs(normal_from_gs_path, exist_ok=True)
 
+    vdb_volume = vdbfusion.VDBVolume(voxel_size=0.004, sdf_trunc=0.02, space_carving=False) # For Scene
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         results = render(view, gaussians, pipeline, background)
         rendering = results["render"]
         median_depth = results["median_depth"]
-        median_depth = median_depth / (median_depth.max() + 1e-5)
+        median_depth_image = median_depth / (median_depth.max() + 1e-5)
         normal_from_depth = normal_from_depth_image(median_depth[0], view.intrinsics.cuda(), 
                                                     view.extrinsics.cuda())[0].permute(2, 0, 1)
         normal_from_gs = results["normal_from_gs"]
         gt = view.original_image[0:3, :, :]
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(median_depth, os.path.join(depth_path, '{0:05d}'.format(idx) + ".png"))
+        torchvision.utils.save_image(median_depth_image, os.path.join(depth_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(normal_from_depth, os.path.join(normal_from_depth_image_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(normal_from_gs, os.path.join(normal_from_gs_path, '{0:05d}'.format(idx) + ".png"))
+        if True:
+            rendered_pcd_cam, rendered_pcd_world = depth2point(median_depth[0], view.intrinsics.to(median_depth.device), 
+                                                                view.extrinsics.to(median_depth.device))
+            P = view.extrinsics
+            P_inv = P.inverse()
+            cam_center = P_inv[:3, 3]
+            invalid_mask = median_depth[0] > 6
+            median_depth[0][invalid_mask] = 0
+            rendered_pcd_cam, rendered_pcd_world = depth2point(median_depth[0], view.intrinsics.to(median_depth.device), 
+                                                    view.extrinsics.to(median_depth.device))
+            rendered_pcd_world = rendered_pcd_world[~invalid_mask]
+            vdb_volume.integrate(rendered_pcd_world.double().cpu().numpy(), extrinsic=cam_center.double().cpu().numpy())
+
+    vertices, faces = vdb_volume.extract_triangle_mesh(min_weight=5)
+    geo_mesh = trimesh.Trimesh(vertices, faces)
+    geo_mesh.export(os.path.join(model_path, 'fused_mesh.ply'))
+    print("Fused mesh saved to {}".format(os.path.join(model_path, 'fused_mesh.ply')))
+
 
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool):
     with torch.no_grad():
