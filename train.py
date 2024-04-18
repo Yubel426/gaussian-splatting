@@ -138,8 +138,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
             
-            if iteration % 3000 == 0:
-                gaussians.remove_small_gaussians(0.05)
             # Optimizer step
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
