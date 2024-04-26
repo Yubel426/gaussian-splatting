@@ -10,6 +10,7 @@
 #
 
 import torch
+import cv2
 import math
 import numpy as np
 from typing import NamedTuple
@@ -137,3 +138,19 @@ def normal_from_depth_image(depth, intrinsic_matrix, extrinsic_matrix):
     xyz_normal = depth_pcd2normal(xyz_cam)
 
     return xyz_normal, xyz_cam
+
+def load_K_Rt_from_P(P=None):
+    out = cv2.decomposeProjectionMatrix(P)
+    K = out[0]
+    R = out[1]
+    t = out[2]
+
+    K = K / K[2, 2]
+    intrinsics = np.eye(4)
+    intrinsics[:3, :3] = K
+
+    pose = np.eye(4, dtype=np.float32)
+    pose[:3, :3] = R.transpose()
+    pose[:3, 3] = (t[:3] / t[3])[:, 0]
+
+    return intrinsics, pose

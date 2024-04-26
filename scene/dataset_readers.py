@@ -12,10 +12,12 @@
 import os
 import sys
 from PIL import Image
+import cv2
+from pathlib import Path
 from typing import NamedTuple
 from scene.colmap_loader import read_extrinsics_text, read_intrinsics_text, qvec2rotmat, \
     read_extrinsics_binary, read_intrinsics_binary, read_points3D_binary, read_points3D_text
-from utils.graphics_utils import getWorld2View2, focal2fov, fov2focal
+from utils.graphics_utils import getWorld2View2, focal2fov, fov2focal, load_K_Rt_from_P
 import numpy as np
 import json
 from pathlib import Path
@@ -254,7 +256,84 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
                            ply_path=ply_path)
     return scene_info
 
+def readNeuSSceneInfo(path, white_background, eval, w_mask=False):
+    image_path = Path(path) / "image"
+    mask_path = Path(path) / "mask"
+    cams_path = Path(path) / "cameras_sphere.npz"
+
+    all_cameras_unsorted = []
+        
+    cams = np.load(cams_path)
+    id_list = list(cams.keys())
+    n_images = max([int(k.split('_')[-1]) for k in id_list]) + 1
+    image_ids = range(n_images)
+    
+    for _id in image_ids:
+        image_name = f'{_id:06d}.png'
+        _image_path = image_path / image_name
+        __image = cv2.imread(str(_image_path))
+        _image = Image.open(_image_path)
+        height, width, _ = __image.shape
+        _mask_path = mask_path / f'{_id:03d}.png'
+        if w_mask and os.path.exists(_mask_path):
+            mask = cv2.imread(str(_mask_path), cv2.IMREAD_GRAYSCALE)
+            _, mask = cv2.threshold(mask, 1, 255, cv2.THRESH_BINARY) # Ensure mask is binary so multiply operation works as expected
+            mask = cv2.resize(mask, (width, height)) # Resize the mask to match the size of the image
+            background_mask = cv2.bitwise_not(mask) # Invert the mask to get the background
+            black_background = np.full(_image.shape, 0, dtype=np.uint8) # Make the background black
+
+            # Combine the white background and the mask
+            background = cv2.bitwise_and(black_background, black_background, mask=background_mask)
+            masked_image = cv2.bitwise_and(_image, _image, mask=mask)
+            _image = cv2.addWeighted(masked_image, 1, background, 1, 0)
+        else:
+            mask = None
+
+        world_mat, scale_mat = cams[f'world_mat_{_id}'], cams[f'scale_mat_{_id}']
+        P = (world_mat @ scale_mat)[:3,:4]
+        K, c2w = load_K_Rt_from_P(P)
+        fx, fy, cx, cy = K[0,0], K[1,1], K[0,2], K[1,2]
+
+        extrinsics = np.linalg.inv(c2w)
+        R = np.transpose(extrinsics[:3, :3])
+        T = extrinsics[:3, 3]
+        
+        FoVy = focal2fov(fy, height)
+        FoVx = focal2fov(fx, width)
+        _camera = CameraInfo(uid=_id, R=R, T=T, FovY=FoVy, FovX=FoVx, image=_image, 
+                            image_path=image_path, image_name=image_name, width=width, height=height)
+        all_cameras_unsorted.append(_camera)
+    
+    all_cameras = sorted(all_cameras_unsorted, key=lambda x: x.image_name) 
+    test_cameras = []
+    train_cameras = all_cameras
+    nerf_normalization = getNerfppNorm(all_cameras)
+    ply_path = os.path.join(path, "points3d.ply")
+    if not os.path.exists(ply_path):
+        # Since this data set has no colmap data, we start with random points
+        num_pts = 100_000
+        print(f"Generating random point cloud ({num_pts})...")
+        
+        # We create random points inside the bounds of the synthetic Blender scenes
+        xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3
+        shs = np.random.random((num_pts, 3)) / 255.0
+        pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
+
+        storePly(ply_path, xyz, SH2RGB(shs) * 255)
+    try:
+        pcd = fetchPly(ply_path)
+    except:
+        pcd = None
+
+    scene_info = SceneInfo(point_cloud=pcd,
+                           train_cameras=train_cameras,
+                           test_cameras=test_cameras,
+                           nerf_normalization=nerf_normalization,
+                           ply_path=ply_path)
+    return scene_info
+
 sceneLoadTypeCallbacks = {
     "Colmap": readColmapSceneInfo,
-    "Blender" : readNerfSyntheticInfo
+    "Blender" : readNerfSyntheticInfo,
+    "NeuS": readNeuSSceneInfo
 }
