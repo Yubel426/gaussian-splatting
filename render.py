@@ -25,7 +25,7 @@ from gaussian_renderer import GaussianModel
 from utils.graphics_utils import normal_from_depth_image, depth2point
 
 
-def render_set(model_path, name, iteration, views, gaussians, pipeline, background):
+def render_set(model_path, name, iteration, views, gaussians, pipeline, background, mesh_extraction=False):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
     depth_path = os.path.join(model_path, name, "ours_{}".format(iteration), "median_depth")
@@ -37,13 +37,14 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     makedirs(depth_path, exist_ok=True)
     makedirs(normal_from_depth_image_path, exist_ok=True)
     makedirs(normal_from_gs_path, exist_ok=True)
-
-    vdb_volume = vdbfusion.VDBVolume(voxel_size=0.004, sdf_trunc=0.02, space_carving=False) # For Scene
+    if mesh_extraction:
+        vdb_volume = vdbfusion.VDBVolume(voxel_size=0.004, sdf_trunc=0.02, space_carving=False) # For Scene
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         results = render(view, gaussians, pipeline, background)
         rendering = results["render"]
         median_depth = results["median_depth"]
+        alpha = results["alpha"]
         median_depth_image = median_depth / (median_depth.max() + 1e-5)
         normal_from_depth = normal_from_depth_image(median_depth[0], view.intrinsics.cuda(), 
                                                     view.extrinsics.cuda())[0].permute(2, 0, 1)
@@ -54,23 +55,26 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         torchvision.utils.save_image(median_depth_image, os.path.join(depth_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(normal_from_depth, os.path.join(normal_from_depth_image_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(normal_from_gs, os.path.join(normal_from_gs_path, '{0:05d}'.format(idx) + ".png"))
-        if True:
+        if mesh_extraction and idx % 1 == 0:
             rendered_pcd_cam, rendered_pcd_world = depth2point(median_depth[0], view.intrinsics.to(median_depth.device), 
                                                                 view.extrinsics.to(median_depth.device))
             P = view.extrinsics
             P_inv = P.inverse()
             cam_center = P_inv[:3, 3]
-            invalid_mask = median_depth[0] > 6
-            median_depth[0][invalid_mask] = 0
+
+            # depth_mask = median_depth[0] > 6
+            alpha_mask = alpha[0] < 0.5
+            # invalid_mask = torch.logical_or(depth_mask, alpha_mask)
+            median_depth[0][alpha_mask] = 0 
             rendered_pcd_cam, rendered_pcd_world = depth2point(median_depth[0], view.intrinsics.to(median_depth.device), 
                                                     view.extrinsics.to(median_depth.device))
-            rendered_pcd_world = rendered_pcd_world[~invalid_mask]
+            rendered_pcd_world = rendered_pcd_world[~alpha_mask]
             vdb_volume.integrate(rendered_pcd_world.double().cpu().numpy(), extrinsic=cam_center.double().cpu().numpy())
-
-    vertices, faces = vdb_volume.extract_triangle_mesh(min_weight=5)
-    geo_mesh = trimesh.Trimesh(vertices, faces)
-    geo_mesh.export(os.path.join(model_path, 'fused_mesh.ply'))
-    print("Fused mesh saved to {}".format(os.path.join(model_path, 'fused_mesh.ply')))
+    if mesh_extraction:
+        vertices, faces = vdb_volume.extract_triangle_mesh(min_weight=5)
+        geo_mesh = trimesh.Trimesh(vertices, faces)
+        geo_mesh.export(os.path.join(model_path, 'fused_mesh.ply'))
+        print("Fused mesh saved to {}".format(os.path.join(model_path, 'fused_mesh.ply')))
 
 
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool):
@@ -82,7 +86,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         if not skip_train:
-             render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background)
+             render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background, True)
 
         if not skip_test:
              render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background)
